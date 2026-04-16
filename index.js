@@ -24,15 +24,23 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'API is running' });
 });
 
-const PORT = process.env.PORT || 5000;
+app.get('/', (req, res) => {
+  res.send('Fiori Backend is live.');
+});
 
+// Configure MongoDB independently from app.listen to support Serverless cold-starts
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => {
-    console.log('Connected to MongoDB');
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('MongoDB connection error:', err);
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+// Only run explicit port binding locally. Vercel acts as its own listener
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 5001; 
+  // ensure it uses 5001 if local to match frontend map
+  app.listen(PORT, () => {
+    console.log(`Server running locally on port ${PORT}`);
   });
+}
+
+// Crucial: Vercel requires the app itself to be exported 
+module.exports = app;
