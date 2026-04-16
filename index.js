@@ -7,6 +7,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Synchronous DB Connection enforcement for Serverless environments
+const connectDB = async (req, res, next) => {
+  if (mongoose.connections[0].readyState) {
+    return next();
+  }
+  try {
+    await mongoose.connect(process.env.MONGODB_URI);
+    console.log('MongoDB connected successfully');
+    next();
+  } catch (err) {
+    console.error('MongoDB connection error:', err);
+    return res.status(500).json({ message: 'Database Connection Failed. Ensure MONGODB_URI is set securely.' });
+  }
+};
+
+app.use(connectDB);
+
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const ticketRoutes = require('./routes/ticketRoutes');
@@ -27,11 +44,6 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
   res.send('Fiori Backend is live.');
 });
-
-// Configure MongoDB independently from app.listen to support Serverless cold-starts
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('Connected to MongoDB'))
-  .catch(err => console.error('MongoDB connection error:', err));
 
 // Only run explicit port binding locally. Vercel acts as its own listener
 if (process.env.NODE_ENV !== 'production') {
