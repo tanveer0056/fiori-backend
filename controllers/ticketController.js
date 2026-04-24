@@ -21,6 +21,30 @@ exports.getTickets = async (req, res) => {
   }
 };
 
+// @desc    Get single ticket
+// @route   GET /api/tickets/:id
+// @access  Admin/Vendor
+exports.getTicket = async (req, res) => {
+  try {
+    const ticket = await Ticket.findById(req.params.id)
+        .populate('assignedVendorId', 'email vendorDetails')
+        .populate('comments.postedBy', 'email role vendorDetails');
+        
+    if (!ticket) return res.status(404).json({ message: 'Ticket not found' });
+    
+    if (ticket.organizationId.toString() !== req.user.organizationId.toString()) {
+      return res.status(401).json({ message: 'Not authorized' });
+    }
+    if (req.user.role === 'Vendor' && ticket.assignedVendorId._id.toString() !== req.user.userId.toString()) {
+      return res.status(401).json({ message: 'Not your assigned ticket' });
+    }
+
+    res.json(ticket);
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error' });
+  }
+};
+
 // @desc    Create a new ticket
 // @route   POST /api/tickets
 // @access  Admin only

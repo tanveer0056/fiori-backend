@@ -20,14 +20,18 @@ exports.getInvoices = async (req, res) => {
 exports.createInvoice = async (req, res) => {
   const { documentNo, documentDate, submissionDate, amount, vendorId, currentDepartment } = req.body;
   try {
+    const isVendor = req.user.role === 'Vendor';
+    const finalVendorId = isVendor ? req.user.userId : vendorId;
+    const finalDept = isVendor ? 'Procurement' : (currentDepartment || 'Procurement');
+
     const invoice = await Invoice.create({
       documentNo,
       documentDate,
       submissionDate,
       amount,
-      vendorId,
-      currentDepartment,
-      departmentHistory: [{ department: currentDepartment || 'Procurement', dateEntered: submissionDate ? new Date(submissionDate) : Date.now() }],
+      vendorId: finalVendorId,
+      currentDepartment: finalDept,
+      departmentHistory: [{ department: finalDept, dateEntered: submissionDate ? new Date(submissionDate) : Date.now() }],
       organizationId: req.user.organizationId
     });
     res.status(201).json(invoice);

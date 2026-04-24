@@ -5,7 +5,7 @@ const { protect, adminOnly } = require('../middlewares/authMiddleware');
 
 router.route('/')
   .get(protect, getInvoices)
-  .post(protect, adminOnly, createInvoice);
+  .post(protect, createInvoice);
 
 router.route('/:id')
   .put(protect, adminOnly, updateInvoice)

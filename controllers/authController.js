@@ -74,6 +74,7 @@ exports.loginUser = async (req, res) => {
         email: user.email,
         role: user.role,
         organizationId: user.organizationId,
+        vendorDetails: user.vendorDetails,
         token: generateToken(user._id, user.organizationId, user.role, staySignedIn)
       });
     } else {
