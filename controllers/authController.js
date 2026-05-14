@@ -12,7 +12,7 @@ const generateToken = (userId, organizationId, role, staySignedIn = false) => {
 // @desc    Register a new Organization and Admin user
 // @route   POST /api/auth/register
 exports.registerOrganization = async (req, res) => {
-  const { orgName, email, password } = req.body;
+  const { orgName, username, email, password } = req.body;
   try {
     const orgExists = await Organization.findOne({ name: orgName });
     if (orgExists) {
@@ -27,6 +27,7 @@ exports.registerOrganization = async (req, res) => {
     const organization = await Organization.create({ name: orgName });
 
     const user = await User.create({
+      username,
       email,
       password,
       role: 'Admin',
@@ -35,6 +36,7 @@ exports.registerOrganization = async (req, res) => {
 
     res.status(201).json({
       _id: user._id,
+      username: user.username,
       email: user.email,
       role: user.role,
       organizationId: user.organizationId,
@@ -71,10 +73,12 @@ exports.loginUser = async (req, res) => {
     if (user && (await user.comparePassword(password))) {
       res.json({
         _id: user._id,
+        username: user.username,
         email: user.email,
         role: user.role,
         organizationId: user.organizationId,
         vendorDetails: user.vendorDetails,
+        allowTicketModification: user.allowTicketModification,
         token: generateToken(user._id, user.organizationId, user.role, staySignedIn)
       });
     } else {

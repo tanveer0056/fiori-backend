@@ -1,20 +1,33 @@
 const User = require('../models/User');
+const Chat = require('../models/Chat');
+const { createNotification } = require('./notificationController');
 
 // @desc    Get all internal users (Admins)
 // @route   GET /api/users
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.find({ organizationId: req.user.organizationId, role: 'Admin' }).select('-password');
+    const users = await User.find({ organizationId: req.user.organizationId, role: { $in: ['Admin', 'General User'] } }).select('-password');
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: 'Server error fetching users' });
   }
 };
 
+// @desc    Get all users (Admins, General Users, Vendors)
+// @route   GET /api/users/all
+exports.getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find({ organizationId: req.user.organizationId }).select('-password');
+    res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error fetching all users' });
+  }
+};
+
 // @desc    Create an Admin user account
 // @route   POST /api/users/add
 exports.createUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { username, email, password } = req.body;
   try {
     const existing = await User.findOne({ email });
     if (existing) {
@@ -22,13 +35,20 @@ exports.createUser = async (req, res) => {
     }
 
     const newUser = await User.create({
+      username,
       email,
       password,
-      role: 'Admin',
+      role: 'General User',
       organizationId: req.user.organizationId
     });
 
-    res.status(201).json({ _id: newUser._id, email: newUser.email });
+    // Add new user to all existing vendor group chats in the org
+    await Chat.updateMany(
+      { organizationId: req.user.organizationId, isGroup: true },
+      { $addToSet: { members: newUser._id } }
+    );
+
+    res.status(201).json({ _id: newUser._id, username: newUser.username, email: newUser.email });
   } catch (error) {
     res.status(500).json({ message: 'Server Error' });
   }
@@ -64,6 +84,34 @@ exports.createVendor = async (req, res) => {
       allowTicketModification: allowModification || false
     });
 
+    // Create a group chat for the vendor
+    const allOrgUsers = await User.find({ 
+      organizationId: req.user.organizationId,
+      role: { $in: ['Admin', 'General User'] }
+    }).select('_id');
+    
+    const memberIds = allOrgUsers.map(u => u._id);
+    memberIds.push(vendor._id);
+
+    await Chat.create({
+      name: vendorName || vendorCompany || 'Vendor Group',
+      isGroup: true,
+      organizationId: req.user.organizationId,
+      vendorId: vendor._id,
+      members: memberIds
+    });
+
+    // Send Welcome Notification
+    await createNotification(req, {
+      recipient: vendor._id,
+      sender: req.user.userId,
+      type: 'success',
+      title: 'Welcome to Fiori!',
+      body: `Your vendor account has been successfully created. You can now track invoices and manage complaints.`,
+      tag: 'Vendors',
+      link: '/app/profile'
+    });
+
     res.status(201).json({ _id: vendor._id, email: vendor.email });
   } catch (error) {
     res.status(500).json({ message: 'Server Error' });
@@ -94,3 +142,63 @@ exports.changePassword = async (req, res) => {
     res.status(500).json({ message: 'Server Error' });
   }
 };
+
+// @desc    Update any user's profile/credentials
+// @route   PUT /api/users/:id
+// @access  Admin only
+exports.updateUser = async (req, res) => {
+  const { username, email, password, role, vendorName, vendorCompany, allowModification } = req.body;
+  try {
+    const userToUpdate = await User.findById(req.params.id);
+    if (!userToUpdate) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update base fields
+    if (username !== undefined) userToUpdate.username = username;
+    if (email !== undefined) userToUpdate.email = email;
+    if (role !== undefined) userToUpdate.role = role;
+    
+    // Update vendor specific fields if applicable
+    if (userToUpdate.role === 'Vendor') {
+      if (!userToUpdate.vendorDetails) userToUpdate.vendorDetails = {};
+      if (vendorName !== undefined) userToUpdate.vendorDetails.name = vendorName;
+      if (vendorCompany !== undefined) userToUpdate.vendorDetails.company = vendorCompany;
+      if (allowModification !== undefined) userToUpdate.allowTicketModification = allowModification;
+    }
+
+    // Update password if provided
+    if (password && password.trim().length > 0) {
+      userToUpdate.password = password;
+    }
+
+    await userToUpdate.save();
+
+    res.json({ message: 'User updated successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error updating user' });
+  }
+};
+
+// @desc    Bulk delete users
+// @route   POST /api/users/bulk-delete
+// @access  Admin only
+exports.deleteUsers = async (req, res) => {
+  const { userIds } = req.body;
+  if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ message: 'No user IDs provided' });
+  }
+
+  try {
+    await User.deleteMany({
+      _id: { $in: userIds },
+      organizationId: req.user.organizationId
+    });
+    res.json({ message: 'Users deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error deleting users' });
+  }
+};
+
+// Note: Deprecated mock notifications removed. Real notifications are now in notificationRoutes.js
+

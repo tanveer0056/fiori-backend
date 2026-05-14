@@ -8,6 +8,9 @@ const protect = (req, res, next) => {
   ) {
     try {
       token = req.headers.authorization.split(' ')[1];
+      if (!token || token === 'null' || token === 'undefined') {
+        return res.status(401).json({ message: 'Not authorized, invalid token' });
+      }
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
       req.user = decoded; // { userId, organizationId, role }

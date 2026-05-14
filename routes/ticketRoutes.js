@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const ticketController = require('../controllers/ticketController');
-const { getTickets, createTicket, updateTicket, getTicket } = ticketController;
+const { getTickets, createTicket, updateTicket, getTicket, getTicketSummary } = ticketController;
 const { protect, adminOnly } = require('../middlewares/authMiddleware');
+
+router.get('/monthly-summary', protect, getTicketSummary);
 
 router.route('/')
   .get(protect, getTickets)
