@@ -63,6 +63,7 @@ exports.getTicketSummary = async (req, res) => {
     });
     const avgResolution = resolvedCount ? (totalResolutionDays / resolvedCount).toFixed(1) : 0;
 
+
     const monthlySummary = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -118,7 +119,15 @@ exports.createTicket = async (req, res) => {
   if (req.user.role === 'General User' || req.user.role === 'Vendor') {
     return res.status(403).json({ message: 'Not authorized to create tickets' });
   }
-  const { title, description, customerAccountId, assignedVendorId, natureOfWork, siteLocation, pocDetails, priority } = req.body;
+  const { 
+    title, description, customerAccountId, assignedVendorId, natureOfWork, 
+    siteLocation, pocDetails, priority, category, subCategory, 
+    requestedBy, contactNumber, onBehalfOf, dueDate, tags 
+  } = req.body;
+
+  if (!title || !description || !customerAccountId || !assignedVendorId) {
+    return res.status(400).json({ message: 'Required fields missing: Title, Description, Customer Account ID, and Vendor are mandatory.' });
+  }
 
   try {
     const ticket = await Ticket.create({
@@ -130,26 +139,43 @@ exports.createTicket = async (req, res) => {
       siteLocation,
       pocDetails,
       priority: priority || 'Medium',
+      category: category || 'Service',
+      subCategory,
+      requestedBy,
+      contactNumber,
+      onBehalfOf,
+      dueDate,
+      tags: tags || [],
       organizationId: req.user.organizationId
     });
     
     // Generate notification for assigned vendor
-    await createNotification(req, {
-      recipient: assignedVendorId,
-      sender: req.user.userId,
-      type: 'task',
-      title: 'New Ticket Assigned',
-      body: description || `You have been assigned a new ticket: ${title}`,
-      tag: 'Complaints',
-      link: `/app/complaints/${ticket._id}`
-    });
+    try {
+      await createNotification(req, {
+        recipient: assignedVendorId,
+        sender: req.user.userId,
+        type: 'task',
+        title: `New Ticket Assigned: #${ticket.ticketNo}`,
+        body: `Ticket #${ticket.ticketNo} (${title}) has been assigned to you.`,
+        tag: 'Complaints',
+        link: `/app/complaints/${ticket._id}`
+      });
+    } catch (notifyErr) {
+      console.error('Notification failed for new ticket:', notifyErr);
+    }
 
     console.log(`[Email Mock] Sending assignment email to vendor ID ${assignedVendorId} for ticket ${ticket._id}`);
 
     res.status(201).json(ticket);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Server Error' });
+    console.error('Ticket Creation Error:', error);
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({ message: Object.values(error.errors).map(val => val.message).join(', ') });
+    }
+    if (error.code === 11000) {
+      return res.status(400).json({ message: 'A conflict occurred with the ticket reference numbering. Please try again.' });
+    }
+    res.status(500).json({ message: 'Internal Server Error during ticket registry.' });
   }
 };
 
@@ -157,7 +183,11 @@ exports.createTicket = async (req, res) => {
 // @route   PUT /api/tickets/:id
 // @access  Admin/Vendor
 exports.updateTicket = async (req, res) => {
-  const { status, addComment } = req.body;
+  const { 
+    status, addComment, category, subCategory, priority, 
+    natureOfWork, siteLocation, pocDetails, requestedBy, 
+    contactNumber, onBehalfOf, dueDate, tags, resolutionCategory 
+  } = req.body;
   try {
     const ticket = await Ticket.findById(req.params.id);
     if (!ticket) return res.status(404).json({ message: 'Not found' });
@@ -186,10 +216,27 @@ exports.updateTicket = async (req, res) => {
     const oldStatus = ticket.status;
     if (status) {
       ticket.status = status;
-      if (status === 'Closed' && !ticket.resolvedAt) {
+      if (status === 'Closed') {
         ticket.resolvedAt = Date.now();
+        if (resolutionCategory) ticket.resolutionCategory = resolutionCategory;
+      } else {
+        ticket.resolvedAt = undefined;
       }
     }
+
+    // Update other ERP fields if provided
+    if (category) ticket.category = category;
+    if (subCategory) ticket.subCategory = subCategory;
+    if (priority) ticket.priority = priority;
+    if (natureOfWork) ticket.natureOfWork = natureOfWork;
+    if (siteLocation) ticket.siteLocation = siteLocation;
+    if (pocDetails) ticket.pocDetails = pocDetails;
+    if (requestedBy) ticket.requestedBy = requestedBy;
+    if (contactNumber) ticket.contactNumber = contactNumber;
+    if (onBehalfOf) ticket.onBehalfOf = onBehalfOf;
+    if (dueDate) ticket.dueDate = dueDate;
+    if (tags) ticket.tags = tags;
+
     if (addComment) {
       ticket.comments.push({ text: addComment, postedBy: req.user.userId });
     }
@@ -202,8 +249,8 @@ exports.updateTicket = async (req, res) => {
         recipient: ticket.assignedVendorId,
         sender: req.user.userId,
         type: 'success',
-        title: 'Ticket Resolved',
-        body: `Ticket # ${ticket._id.toString().slice(-6)}: "${ticket.title}" has been closed.`,
+        title: `Ticket Resolved: #${ticket.ticketNo}`,
+        body: `Ticket #${ticket.ticketNo} ("${ticket.title}") has been successfully closed.`,
         tag: 'Complaints',
         link: `/app/complaints/${ticket._id}`
       });
@@ -228,6 +275,7 @@ exports.updateTicket = async (req, res) => {
         try {
           const adminUser = await User.findOne({ role: 'Admin', organizationId: ticket.organizationId });
           const vendorUser = await User.findById(ticket.assignedVendorId);
+          const ticketRef = ticket.ticketNo || ticket._id.toString().slice(-6).toUpperCase();
           
           let chat = await Chat.findOne({
             vendorId: ticket.assignedVendorId,
@@ -235,7 +283,7 @@ exports.updateTicket = async (req, res) => {
           });
 
           if (!chat) {
-            // Fallback to searching for any chat including these members if the primary vendor group chat isn't found
+            // Fallback to searching for any chat including these members
             chat = await Chat.findOne({
               members: { $all: [req.user.userId, recipient.toString()] }
             });
@@ -251,7 +299,6 @@ exports.updateTicket = async (req, res) => {
             });
           }
 
-          const ticketRef = ticket._id.toString().slice(-6).toUpperCase();
           const mentionName = req.user.role === 'Admin' 
             ? `@${vendorUser?.vendorDetails?.name || vendorUser?.username || vendorUser?.email?.split('@')[0] || 'Vendor'}` 
             : `@${adminUser?.username || adminUser?.email?.split('@')[0] || 'Admin'}`;
