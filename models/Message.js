@@ -26,7 +26,17 @@ const messageSchema = new mongoose.Schema({
   readBy: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
-  }]
+  }],
+  parentMessage: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message'
+  },
+  replyToText: {
+    type: String
+  },
+  replyToSenderName: {
+    type: String
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Message', messageSchema);

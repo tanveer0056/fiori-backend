@@ -82,7 +82,10 @@ exports.getMessages = async (req, res) => {
         dateGroup: new Date(msg.createdAt).toLocaleDateString(),
         rawText: msg.text,
         isDeleted: msg.isDeleted,
-        isEdited: msg.isEdited
+        isEdited: msg.isEdited,
+        parentMessage: msg.parentMessage || null,
+        replyToText: msg.replyToText || null,
+        replyToSenderName: msg.replyToSenderName || null
       };
     });
 
@@ -95,7 +98,7 @@ exports.getMessages = async (req, res) => {
 // @desc    Send a message
 // @route   POST /api/messages/conversations/:id
 exports.sendMessage = async (req, res) => {
-  const { text } = req.body;
+  const { text, parentMessage, replyToText, replyToSenderName } = req.body;
   const chatId = req.params.id;
 
   try {
@@ -105,7 +108,10 @@ exports.sendMessage = async (req, res) => {
     const newMessage = await Message.create({
       chatId,
       sender: req.user.userId,
-      text
+      text,
+      parentMessage,
+      replyToText,
+      replyToSenderName
     });
 
     chat.latestMessage = newMessage._id;
@@ -131,7 +137,10 @@ exports.sendMessage = async (req, res) => {
       dateGroup: new Date(populatedMessage.createdAt).toLocaleDateString(),
       rawText: populatedMessage.text,
       isDeleted: false,
-      isEdited: false
+      isEdited: false,
+      parentMessage: populatedMessage.parentMessage || null,
+      replyToText: populatedMessage.replyToText || null,
+      replyToSenderName: populatedMessage.replyToSenderName || null
     };
 
     // Emit socket event to personal rooms
