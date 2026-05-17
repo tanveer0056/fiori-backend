@@ -200,5 +200,20 @@ exports.deleteUsers = async (req, res) => {
   }
 };
 
-// Note: Deprecated mock notifications removed. Real notifications are now in notificationRoutes.js
+// @desc    Get online user IDs
+// @route   GET /api/users/online
+exports.getOnlineUsers = async (req, res) => {
+  try {
+    // Users active in the last 2 minutes are considered online
+    const threshold = new Date(Date.now() - 2 * 60 * 1000);
+    const onlineUsers = await User.find({ 
+      organizationId: req.user.organizationId,
+      lastActive: { $gte: threshold }
+    }).select('_id');
+    
+    res.json(onlineUsers.map(u => u._id));
+  } catch (error) {
+    res.status(500).json({ message: 'Server error fetching online status' });
+  }
+};
 

@@ -14,6 +14,11 @@ const protect = (req, res, next) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
       req.user = decoded; // { userId, organizationId, role }
+      
+      // Update last active in background (non-blocking)
+      const User = require('../models/User');
+      User.findByIdAndUpdate(decoded.userId, { lastActive: new Date() }).exec().catch(() => {});
+
       next();
     } catch (error) {
       console.error(error);

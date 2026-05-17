@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getVendors, createVendor, createUser, getUsers, changePassword, getAllUsers, deleteUsers, updateUser } = require('../controllers/userController');
+const { getVendors, createVendor, createUser, getUsers, changePassword, getAllUsers, deleteUsers, updateUser, getOnlineUsers } = require('../controllers/userController');
 const { protect, adminOnly } = require('../middlewares/authMiddleware');
 
 // Notification routes are now handled in notificationRoutes.js
@@ -11,6 +11,9 @@ router.route('/')
 
 router.route('/all')
   .get(protect, adminOnly, getAllUsers);
+
+router.route('/online')
+  .get(protect, getOnlineUsers);
 
 router.route('/add')
   .post(protect, adminOnly, createUser);
